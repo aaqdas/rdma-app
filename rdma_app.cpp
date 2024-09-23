@@ -40,7 +40,7 @@ verbs RDMA_RC_example.c *
 * *****************************************************************************/
 #include <stdio.h> 
 #include <stdlib.h>
-#include <iostream>
+// #include <iostream>
 #include <string.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -414,7 +414,8 @@ int resources_create(struct resources *res) {
     /* only in the server side put the message in the memory buffer */ 
     if (!config.server_name) {
         strcpy(res->buf, MSG);
-        fprintf(stdout, "going to send the message: '%s'\n", res->buf); }
+        fprintf(stdout, "going to send the message: '%s'\n", res->buf); 
+        }
     else 
         memset(res->buf, 0, size);
     /* register the memory buffer */
@@ -531,8 +532,8 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
     rc = ibv_modify_qp(qp, &attr, flags); 
     if (rc) {
         fprintf(stderr, "failed to modify QP state to RTR\n");
-        return rc;
     }
+    return rc;
 }
 
 static int modify_qp_to_rts (struct ibv_qp *qp) {
@@ -695,7 +696,7 @@ fprintf(stdout, "Options:\n");
 fprintf(stdout, " -p, --port <port> listen on/connect to port <port> (default 18515)\n"); 
 fprintf(stdout, " -d, --ib-dev <dev> use IB device <dev> (default first device found)\n"); 
 fprintf(stdout, " -i, --ib-port <port> use port <port> of IB device (default 1)\n"); 
-fprintf(stdout, " -g, --gid_idx <git index> gid index to be used in GRH (default not used)\n");
+fprintf(stdout, " -g, --gid_idx <git index> gid index to be used in GRH (default not used) (Set it to 1 for RoCE-V2)\n");
 }
 
 
@@ -748,7 +749,7 @@ int main(int argc, char *argv[]) {
         }
     }
     if (optind == argc - 1) {
-        std::cout << "Optind :" << optind << " argv[optind] = " << argv[optind] << std::endl;
+        // std::cout << "Optind :" << optind << " argv[optind] = " << argv[optind] << std::endl;
         config.server_name = argv[optind];
     }
     else if (optind < argc) {
