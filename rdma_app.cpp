@@ -40,7 +40,7 @@ verbs RDMA_RC_example.c *
 * *****************************************************************************/
 #include <stdio.h> 
 #include <stdlib.h>
-// #include <iostream>
+#include <iostream>
 #include <string.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -60,6 +60,7 @@ verbs RDMA_RC_example.c *
 #define RDMAMSGR "RDMA read operation " 
 #define RDMAMSGW "RDMA write operation" 
 #define MSG_SIZE (strlen(MSG) + 1)
+#define Q_KEY 0x80000000
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 static inline uint64_t htonll(uint64_t x) { return bswap_64(x); }
@@ -71,6 +72,13 @@ static inline uint64_t ntohll(uint64_t x) { return x; }
 #error __BYTE_ORDER is neither __LITTLE_ENDIAN nor __BIG_ENDIAN 
 #endif
 /* structure of test parameters */ 
+enum QP {
+    QP_RC,
+    QP_RD,
+    QP_UD
+};
+
+
 struct config_t
 {
 const char *dev_name;
@@ -78,6 +86,7 @@ char *server_name;
 uint32_t tcp_port;
 int ib_port;
 int gid_idx;
+char *qp_type;
 };
 
 struct cm_con_data_t {
@@ -86,6 +95,7 @@ struct cm_con_data_t {
     uint32_t qp_num;
     uint16_t lid;
     uint8_t gid[16];
+    uint32_t qkey;
 } __attribute__((packed));
 
 struct resources {
@@ -108,7 +118,8 @@ struct config_t config =
     NULL,
     19875,
     1,
-    -1
+    -1,
+    "rc"
 };
 static int sock_connect(const char *servername, int port) {
     struct addrinfo *resolved_addr = NULL;
@@ -255,10 +266,16 @@ static int post_send(struct resources *res, ibv_wr_opcode opcode) {
     sr.num_sge = 1;
     sr.opcode = opcode;
     sr.send_flags = IBV_SEND_SIGNALED;
+    // if (strcmp(config.qkey, "ud")) {
+    //     sr.ud.remote_qkey   = res->remote_props.qkey;
+    //     sr.ud.remote_qpn    = res->remote_props.qp_num;
+    //     sr.ud.ah            = res->ib_ctx->ah;          //TODO: Look into this if the application messes up.
+    // }
 
     if(opcode != IBV_WR_SEND) {
         sr.wr.rdma.remote_addr = res->remote_props.addr;
         sr.wr.rdma.rkey = res->remote_props.rkey;
+        // sr.wr.ah = res->ib_ctx
     }
 
     rc = ibv_post_send(res->qp, &sr, &bad_wr);
@@ -430,7 +447,7 @@ int resources_create(struct resources *res) {
 
     /* create the Queue Pair */ 
     memset(&qp_init_attr, 0, sizeof(qp_init_attr));
-    qp_init_attr.qp_type = IBV_QPT_RC;
+    qp_init_attr.qp_type = strcmp(config.qp_type,"rc") ? IBV_QPT_RC : (strcmp(config.qp_type,"uc") ? IBV_QPT_UC : IBV_QPT_UD);
     qp_init_attr.sq_sig_all = 1;
     qp_init_attr.send_cq = res->cq;
     qp_init_attr.recv_cq = res->cq;  
@@ -497,7 +514,12 @@ static int modify_qp_to_init(struct ibv_qp *qp) {
     attr.pkey_index = 0;
     attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
     flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
-    rc = ibv_modify_qp(qp, &attr, flags); 
+    /* For Unconnected Communication  */
+    if (strcmp(config.qp_type, "ud")) {
+        attr.qkey = Q_KEY; //Q_Keys from 0x80000000 - 8000FFFF are available for general use by applications
+        flags = flags | IBV_QP_QKEY;
+    }
+    rc = ibv_modify_qp(qp, &attr, flags);
     if (rc)
         fprintf(stderr, "failed to modify QP state to INIT\n");
     return rc;
@@ -510,25 +532,34 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
     memset(&attr, 0, sizeof(attr));
     attr.qp_state = IBV_QPS_RTR; 
     attr.path_mtu = IBV_MTU_256; 
-    attr.dest_qp_num = remote_qpn; 
-    attr.rq_psn = 0; 
-    attr.max_dest_rd_atomic = 1; 
-    attr.min_rnr_timer = 0x12; 
-    attr.ah_attr.is_global = 0; 
-    attr.ah_attr.dlid = dlid;
-    attr.ah_attr.sl = 0; 
-    attr.ah_attr.src_path_bits = 0; 
-    attr.ah_attr.port_num = config.ib_port; 
-    if (config.gid_idx >= 0) {
-        attr.ah_attr.is_global = 1;
-        attr.ah_attr.port_num = 1; 
-        memcpy(&attr.ah_attr.grh.dgid, dgid, 16); 
-        attr.ah_attr.grh.flow_label = 0; 
-        attr.ah_attr.grh.hop_limit = 1; 
-        attr.ah_attr.grh.sgid_index = config.gid_idx; 
-        attr.ah_attr.grh.traffic_class = 0;
+    flags = IBV_QP_STATE | IBV_QP_PATH_MTU;
+    if (strcmp(config.qp_type,"rc") || strcmp(config.qp_type,"uc")) {
+        attr.dest_qp_num = remote_qpn; 
+        attr.ah_attr.is_global = 0; 
+        attr.ah_attr.dlid = dlid;
+        attr.ah_attr.sl = 0; 
+        attr.ah_attr.src_path_bits = 0; 
+        attr.ah_attr.port_num = config.ib_port;
+        attr.rq_psn = 0; 
+        attr.max_dest_rd_atomic = 1; 
+        attr.min_rnr_timer = 0x12;                  //Receiver Not Ready Timer 
+        if (config.gid_idx >= 0) {
+            attr.ah_attr.is_global = 1;
+            attr.ah_attr.port_num = 1; 
+            memcpy(&attr.ah_attr.grh.dgid, dgid, 16); 
+            attr.ah_attr.grh.flow_label = 0; 
+            attr.ah_attr.grh.hop_limit = 1; 
+            attr.ah_attr.grh.sgid_index = config.gid_idx; 
+            attr.ah_attr.grh.traffic_class = 0;
+        }
+        flags = flags | IBV_QP_AV | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
     }
-    flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
+    if (strcmp(config.qp_type,"ud")) {
+        attr.qkey = Q_KEY;
+        flags = flags | IBV_QP_QKEY;
+    }
+    
+    // flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
     rc = ibv_modify_qp(qp, &attr, flags); 
     if (rc) {
         fprintf(stderr, "failed to modify QP state to RTR\n");
@@ -544,13 +575,18 @@ static int modify_qp_to_rts (struct ibv_qp *qp) {
     memset(&attr,0,sizeof(attr));
 
     attr.qp_state = IBV_QPS_RTS;
-    attr.timeout = 0x12;
-    attr.retry_cnt = 6;
-    attr.rnr_retry = 0;
-    attr.sq_psn = 0;
-    attr.max_rd_atomic = 1;
+    flags = IBV_QP_STATE;
+    if (strcmp(config.qp_type,"rc") || strcmp(config.qp_type,"uc")) {
+        attr.timeout = 0x12;
+        attr.retry_cnt = 6;
+        attr.rnr_retry = 0;
+        attr.sq_psn = 0;
+        attr.max_rd_atomic = 1;
+        flags = flags | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
+    }
+    // May Update Q-Key If The Program Fails Here.
 
-    flags = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
+    // flags = IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
 
     rc = ibv_modify_qp(qp, &attr, flags); 
     if (rc)
@@ -579,6 +615,9 @@ static int connect_qp(struct resources *res) {
     local_con_data.rkey = htonl(res->mr->rkey); 
     local_con_data.qp_num = htonl(res->qp->qp_num); 
     local_con_data.lid = htons(res->port_attr.lid); 
+    
+    if (strcmp(config.qp_type,"ud")) local_con_data.qkey  = Q_KEY;
+
     memcpy(local_con_data.gid, &my_gid, 16);
     fprintf(stdout, "\nLocal LID = 0x%x\n", res->port_attr.lid);
     if (sock_sync_data(res->sock, sizeof(struct cm_con_data_t), (char *) &local_con_data, (char *) &tmp_con_data) < 0) {
@@ -591,6 +630,9 @@ static int connect_qp(struct resources *res) {
     remote_con_data.rkey = ntohl(tmp_con_data.rkey); 
     remote_con_data.qp_num = ntohl(tmp_con_data.qp_num);
     remote_con_data.lid = ntohs(tmp_con_data.lid); 
+
+    if (strcmp(config.qp_type,"ud")) remote_con_data.qkey = ntohl(tmp_con_data.qkey);
+
     memcpy(remote_con_data.gid, tmp_con_data.gid, 16);
 
     /* save the remote side attributes, we will need it for the post SR */ 
@@ -599,6 +641,10 @@ static int connect_qp(struct resources *res) {
     fprintf(stdout, "Remote rkey = 0x%x\n", remote_con_data.rkey);
     fprintf(stdout, "Remote QP number = 0x%x\n", remote_con_data.qp_num); 
     fprintf(stdout, "Remote LID = 0x%x\n", remote_con_data.lid);
+    
+    if (strcmp(config.qp_type,"ud")) fprintf(stdout, "Remote Q-Key = 0x%x\n", remote_con_data.qkey);
+
+
     if (config.gid_idx >= 0) {
         uint8_t *p = remote_con_data.gid; fprintf(stdout, "Remote GID = %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]); 
         }
@@ -674,6 +720,7 @@ static void print_config(void) {
     fprintf(stdout, "----------------------------\n");
     fprintf(stdout, "Device Name    : \"%s\"\n", config.dev_name);
     fprintf(stdout, "IB Port        : %u\n",config.ib_port);
+    fprintf(stdout, "QP Type        : %s\n",config.qp_type);
     if (config.server_name) {
         fprintf(stdout, "IP         : %s\n", config.server_name);
     }
@@ -696,7 +743,8 @@ fprintf(stdout, "Options:\n");
 fprintf(stdout, " -p, --port <port> listen on/connect to port <port> (default 18515)\n"); 
 fprintf(stdout, " -d, --ib-dev <dev> use IB device <dev> (default first device found)\n"); 
 fprintf(stdout, " -i, --ib-port <port> use port <port> of IB device (default 1)\n"); 
-fprintf(stdout, " -g, --gid_idx <git index> gid index to be used in GRH (default not used) (Set it to 1 for RoCE-V2)\n");
+fprintf(stdout, " -g, --gid-idx <git index> gid index to be used in GRH (default not used) (Set it to 1 for RoCE-V2)\n");
+fprintf(stdout, " -q, --qp-type Queue Pair Type (rc | uc | ud)\n");
 }
 
 
@@ -713,6 +761,7 @@ int main(int argc, char *argv[]) {
             {.name = "ib-dev", .has_arg = 1, .val = 'd'},
             {.name = "ib-port", .has_arg = 1, .val = 'i'},
             {.name = "gid-idx", .has_arg = 1, .val = 'g'},
+            {.name = "qp-type", .has_arg = 1, .val = 'q'},
             {.name = "NULL", .has_arg = 1, .val = '\0'},
         };
 
@@ -743,6 +792,13 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
                 break;
+            case 'q':
+                config.qp_type = strdup(optarg);
+                std::cout << config.qp_type;
+                if(!(strcmp(config.qp_type,"rc") || strcmp(config.qp_type,"uc") || strcmp(config.qp_type,"ud"))) {
+                    usage(argv[0]);
+                    return 1;
+                }
             default:
                 usage(argv[0]);
                 return 1;
