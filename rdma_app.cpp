@@ -868,7 +868,7 @@ int main(int argc, char *argv[]) {
         goto main_exit;
         }
         fprintf(stdout, "Contents of server's buffer: '%s'\n", res.buf);
-
+        strcpy(res.buf, RDMAMSGW);
         fprintf(stdout, "Now replacing it with: '%s'\n", res.buf);
 
         if (post_send(&res, IBV_WR_RDMA_WRITE)) {
