@@ -13,7 +13,7 @@ start_client:
 
 
 build:
-	gcc ./rdma_app.cpp -o rdma_app -libverbs -g -O0 -Wall
+	g++ ./rdma_app.cpp -o rdma_app -libverbs -g -O0 -Wall
 
 debug: 
 	gdb ./rdma_app
