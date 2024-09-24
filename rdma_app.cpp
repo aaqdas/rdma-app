@@ -59,7 +59,7 @@ verbs RDMA_RC_example.c *
 #define MSG "SEND operation "
 #define RDMAMSGR "RDMA read operation " 
 #define RDMAMSGW "RDMA write operation" 
-#define MSG_SIZE (strlen(MSG) + 1)
+#define MSG_SIZE (strlen(RDMAMSGW) + 1)
 #define Q_KEY 0x80000000
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
