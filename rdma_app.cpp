@@ -447,7 +447,7 @@ int resources_create(struct resources *res) {
 
     /* create the Queue Pair */ 
     memset(&qp_init_attr, 0, sizeof(qp_init_attr));
-    qp_init_attr.qp_type = strcmp(config.qp_type,"rc") ? IBV_QPT_RC : (strcmp(config.qp_type,"uc") ? IBV_QPT_UC : IBV_QPT_UD);
+    qp_init_attr.qp_type = !(strcmp(config.qp_type,"rc")) ? IBV_QPT_RC : !(strcmp(config.qp_type,"uc")) ? IBV_QPT_UC : IBV_QPT_UD;
     qp_init_attr.sq_sig_all = 1;
     qp_init_attr.send_cq = res->cq;
     qp_init_attr.recv_cq = res->cq;  
@@ -515,7 +515,7 @@ static int modify_qp_to_init(struct ibv_qp *qp) {
     attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
     flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
     /* For Unconnected Communication  */
-    if (strcmp(config.qp_type, "ud")) {
+    if (strcmp(config.qp_type, "ud") == 0) {
         attr.qkey = Q_KEY; //Q_Keys from 0x80000000 - 8000FFFF are available for general use by applications
         flags = flags | IBV_QP_QKEY;
     }
@@ -533,7 +533,7 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
     attr.qp_state = IBV_QPS_RTR; 
     attr.path_mtu = IBV_MTU_256; 
     flags = IBV_QP_STATE | IBV_QP_PATH_MTU;
-    if (strcmp(config.qp_type,"rc") || strcmp(config.qp_type,"uc")) {
+    if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0)) {
         attr.dest_qp_num = remote_qpn; 
         attr.ah_attr.is_global = 0; 
         attr.ah_attr.dlid = dlid;
@@ -554,7 +554,7 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
         }
         flags = flags | IBV_QP_AV | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
     }
-    if (strcmp(config.qp_type,"ud")) {
+    if (strcmp(config.qp_type,"ud") == 0) {
         attr.qkey = Q_KEY;
         flags = flags | IBV_QP_QKEY;
     }
@@ -576,7 +576,7 @@ static int modify_qp_to_rts (struct ibv_qp *qp) {
 
     attr.qp_state = IBV_QPS_RTS;
     flags = IBV_QP_STATE;
-    if (strcmp(config.qp_type,"rc") || strcmp(config.qp_type,"uc")) {
+    if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0)) {
         attr.timeout = 0x12;
         attr.retry_cnt = 6;
         attr.rnr_retry = 0;
@@ -616,7 +616,7 @@ static int connect_qp(struct resources *res) {
     local_con_data.qp_num = htonl(res->qp->qp_num); 
     local_con_data.lid = htons(res->port_attr.lid); 
     
-    if (strcmp(config.qp_type,"ud")) local_con_data.qkey  = Q_KEY;
+    if (strcmp(config.qp_type,"ud") == 0) local_con_data.qkey  = Q_KEY;
 
     memcpy(local_con_data.gid, &my_gid, 16);
     fprintf(stdout, "\nLocal LID = 0x%x\n", res->port_attr.lid);
@@ -631,7 +631,7 @@ static int connect_qp(struct resources *res) {
     remote_con_data.qp_num = ntohl(tmp_con_data.qp_num);
     remote_con_data.lid = ntohs(tmp_con_data.lid); 
 
-    if (strcmp(config.qp_type,"ud")) remote_con_data.qkey = ntohl(tmp_con_data.qkey);
+    if (strcmp(config.qp_type,"ud") == 0) remote_con_data.qkey = ntohl(tmp_con_data.qkey);
 
     memcpy(remote_con_data.gid, tmp_con_data.gid, 16);
 
@@ -642,7 +642,7 @@ static int connect_qp(struct resources *res) {
     fprintf(stdout, "Remote QP number = 0x%x\n", remote_con_data.qp_num); 
     fprintf(stdout, "Remote LID = 0x%x\n", remote_con_data.lid);
     
-    if (strcmp(config.qp_type,"ud")) fprintf(stdout, "Remote Q-Key = 0x%x\n", remote_con_data.qkey);
+    if (strcmp(config.qp_type,"ud") == 0) fprintf(stdout, "Remote Q-Key = 0x%x\n", remote_con_data.qkey);
 
 
     if (config.gid_idx >= 0) {
@@ -795,7 +795,7 @@ int main(int argc, char *argv[]) {
             case 'q':
                 config.qp_type = strdup(optarg);
                 std::cout << config.qp_type;
-                if(!(strcmp(config.qp_type,"rc") || strcmp(config.qp_type,"uc") || strcmp(config.qp_type,"ud"))) {
+                if(!((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc")==0) || (strcmp(config.qp_type,"ud")==0))) {
                     usage(argv[0]);
                     return 1;
                 }
