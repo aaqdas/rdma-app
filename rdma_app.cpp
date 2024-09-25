@@ -107,6 +107,7 @@ struct resources {
     struct ibv_cq *cq;
     struct ibv_qp *qp;
     struct ibv_mr *mr;
+    struct ibv_ah *ah;
     char          *buf;
     int sock;
 
@@ -465,6 +466,7 @@ int resources_create(struct resources *res) {
     fprintf(stdout, "QP was created, QP number=0x%x\n", res->qp->qp_num);
     resources_create_exit:
 
+
     if(rc) {
 /* Error encountered, cleanup */
         if(res->qp) {
@@ -601,6 +603,16 @@ static int connect_qp(struct resources *res) {
     int rc = 0;
     char temp_char;
     union ibv_gid my_gid;
+
+    struct ibv_ah_attr ah_attr = {
+          .dlid       = 0,
+          .sl         = 0,
+          .src_path_bits = 0,
+          .is_global  = 0,
+          .port_num = config.ib_port
+      };
+
+
     if (config.gid_idx >= 0) {
         rc = ibv_query_gid(res->ib_ctx, config.ib_port, config.gid_idx, &my_gid); 
         if (rc) {
@@ -648,7 +660,22 @@ static int connect_qp(struct resources *res) {
     if (config.gid_idx >= 0) {
         uint8_t *p = remote_con_data.gid; fprintf(stdout, "Remote GID = %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]); 
         }
-    
+
+    if (strcmp(config.qp_type,"ud") == 0) {
+
+        // if (config.ib_p) TODO: Configure for GID.GLOBAL_INTERFACE_ID for DESTINATION IF IT DOESNOT WORK (See Line 110-121, ud_ping_pong.c)
+        ah_attr.dlid = remote_con_data.lid;
+        res->ah = ibv_create_ah(res->pd,&ah_attr);
+        if(!res->ah) {
+            fprintf(stderr,"Failed to Create Address Handle (AH)\n");
+            rc = 1;
+        }
+        // if (rc) {
+        //     return rc;
+        // }
+    }
+
+
     /* modify the QP to init */
     rc = modify_qp_to_init(res->qp); 
     if (rc) { 
