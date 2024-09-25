@@ -95,7 +95,7 @@ struct cm_con_data_t {
     uint32_t qp_num;
     uint16_t lid;
     uint8_t gid[16];
-    uint64_t qkey;
+    uint32_t qkey;
 } __attribute__((packed));
 
 struct resources {
@@ -633,7 +633,7 @@ static int connect_qp(struct resources *res) {
     local_con_data.qp_num = htonl(res->qp->qp_num); 
     local_con_data.lid = htons(res->port_attr.lid); 
     
-    if (strcmp(config.qp_type,"ud") == 0) local_con_data.qkey  = htonll(Q_KEY);
+    if (strcmp(config.qp_type,"ud") == 0) local_con_data.qkey  = htonl(Q_KEY);
 
     memcpy(local_con_data.gid, &my_gid, 16);
     fprintf(stdout, "\nLocal LID = 0x%x\n", res->port_attr.lid);
@@ -648,7 +648,7 @@ static int connect_qp(struct resources *res) {
     remote_con_data.qp_num = ntohl(tmp_con_data.qp_num);
     remote_con_data.lid = ntohs(tmp_con_data.lid); 
 
-    if (strcmp(config.qp_type,"ud") == 0) remote_con_data.qkey = ntohll(tmp_con_data.qkey);
+    if (strcmp(config.qp_type,"ud") == 0) remote_con_data.qkey = ntohl(tmp_con_data.qkey);
 
     memcpy(remote_con_data.gid, tmp_con_data.gid, 16);
 
