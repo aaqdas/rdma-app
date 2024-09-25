@@ -60,7 +60,7 @@ verbs RDMA_RC_example.c *
 #define RDMAMSGR "RDMA read operation " 
 #define RDMAMSGW "RDMA write operation" 
 #define MSG_SIZE (strlen(RDMAMSGW) + 1)
-#define Q_KEY 0x80000002
+#define Q_KEY 0x11111111
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 static inline uint64_t htonll(uint64_t x) { return bswap_64(x); }
@@ -238,6 +238,7 @@ int poll_completion_queue(struct resources *res) {
     }
     else if (poll_result == 0) {
         fprintf(stdout, "completion was found in CQ after timeout");
+        rc = 1;
     }
     else {
         fprintf(stdout, "completion was found in CQ with status 0x%x\n", wc.status);
@@ -440,6 +441,8 @@ int resources_create(struct resources *res) {
         memset(res->buf, 0, size);
     /* register the memory buffer */
     mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE ;
+    if (strcmp(config.qp_type,"ud") == 0 )
+        mr_flags = IBV_ACCESS_LOCAL_WRITE;
     res->mr = ibv_reg_mr(res->pd, res->buf, size, mr_flags); 
     if (!res->mr) {
         fprintf(stderr, "ibv_reg_mr failed with mr_flags=0x%x\n", mr_flags); rc = 1;
@@ -538,9 +541,9 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
     int rc;
     memset(&attr, 0, sizeof(attr));
     attr.qp_state = IBV_QPS_RTR; 
-    attr.path_mtu = IBV_MTU_512; 
-    flags = IBV_QP_STATE | IBV_QP_PATH_MTU;
+    flags = IBV_QP_STATE;
     if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0)) {
+        attr.path_mtu = IBV_MTU_256; 
         attr.dest_qp_num = remote_qpn; 
         attr.ah_attr.is_global = 0; 
         attr.ah_attr.dlid = dlid;
@@ -557,17 +560,17 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
             attr.ah_attr.grh.sgid_index = config.gid_idx; 
             attr.ah_attr.grh.traffic_class = 0;
         }
-        flags = flags | IBV_QP_AV | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN;
+        flags = flags | IBV_QP_AV | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_PATH_MTU;
         if((strcmp(config.qp_type,"rc") == 0)) {
             attr.max_dest_rd_atomic = 1; 
             attr.min_rnr_timer = 0x12;                  //Receiver Not Ready Timer 
             flags = flags |  (IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER);
         }
     }
-    if (strcmp(config.qp_type,"ud") == 0) {
-        attr.qkey = Q_KEY;
-        flags = flags | IBV_QP_QKEY;
-    }
+    // if (strcmp(config.qp_type,"ud") == 0) {
+    //     attr.qkey = Q_KEY;
+    //     flags = flags | IBV_QP_QKEY;
+    // }
     
     // flags = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
     rc = ibv_modify_qp(qp, &attr, flags); 
@@ -585,14 +588,14 @@ static int modify_qp_to_rts (struct ibv_qp *qp) {
     memset(&attr,0,sizeof(attr));
 
     attr.qp_state = IBV_QPS_RTS;
-    flags = IBV_QP_STATE;
+    attr.sq_psn = 0;
+    flags = IBV_QP_STATE | IBV_QP_SQ_PSN;
     if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0)) {
         attr.timeout = 0x12;
         attr.retry_cnt = 6;
         attr.rnr_retry = 0;
-        attr.sq_psn = 0;
         attr.max_rd_atomic = 1;
-        flags = flags | IBV_QP_SQ_PSN ;
+        flags = flags;
         if((strcmp(config.qp_type,"rc") == 0)) 
             flags = flags | (IBV_QP_RETRY_CNT |  IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC | IBV_QP_TIMEOUT);
     }
@@ -695,7 +698,7 @@ static int connect_qp(struct resources *res) {
 
     rc = modify_qp_to_rts(res->qp); 
     if (rc) {
-        fprintf(stderr, "failed to modify QP state to RTR\n");
+        fprintf(stderr, "failed to modify QP state to RTS\n");
         goto connect_qp_exit; 
     }
     fprintf(stdout, "QP state was change to RTS\n");
