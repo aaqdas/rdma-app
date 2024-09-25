@@ -514,12 +514,15 @@ static int modify_qp_to_init(struct ibv_qp *qp) {
     attr.qp_state = IBV_QPS_INIT;
     attr.port_num = config.ib_port;
     attr.pkey_index = 0;
-    attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
-    flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
+    flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT;
     /* For Unconnected Communication  */
     if (strcmp(config.qp_type, "ud") == 0) {
         attr.qkey = Q_KEY; //Q_Keys from 0x80000000 - 8000FFFF are available for general use by applications
-        flags = flags | IBV_QP_QKEY;
+        flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_QKEY;
+    }
+    else{
+        attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
+        flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
     }
     rc = ibv_modify_qp(qp, &attr, flags);
     if (rc)
@@ -554,7 +557,7 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
             attr.ah_attr.grh.sgid_index = config.gid_idx; 
             attr.ah_attr.grh.traffic_class = 0;
         }
-        flags = flags | IBV_QP_AV | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
+        flags = flags | IBV_QP_AV | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN | (IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER && strcmp(config.qp_type,"rc"));
     }
     if (strcmp(config.qp_type,"ud") == 0) {
         attr.qkey = Q_KEY;
@@ -584,7 +587,7 @@ static int modify_qp_to_rts (struct ibv_qp *qp) {
         attr.rnr_retry = 0;
         attr.sq_psn = 0;
         attr.max_rd_atomic = 1;
-        flags = flags | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC;
+        flags = flags | IBV_QP_SQ_PSN | (IBV_QP_RETRY_CNT |  IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC | IBV_QP_TIMEOUT && strcmp(config.qp_type,"rc")) ;
     }
     // May Update Q-Key If The Program Fails Here.
 
