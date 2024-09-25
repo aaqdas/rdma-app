@@ -401,11 +401,13 @@ int resources_create(struct resources *res) {
     ib_dev = NULL;
 
     if (ibv_query_port(res->ib_ctx, config.ib_port, &res->port_attr)) {
-        fprintf(stderr, "ibv_query_port on port %u failed\n", config.ib_port); rc = 1;
+        fprintf(stderr, "ibv_query_port on port %u failed\n", config.ib_port); 
+        rc = 1;
         goto resources_create_exit;
     }
 
-    res->pd = ibv_alloc_pd(res->ib_ctx); if (!res->pd) {
+    res->pd = ibv_alloc_pd(res->ib_ctx); 
+    if (!res->pd) {
         fprintf(stderr, "ibv_alloc_pd failed\n"); rc = 1;
         goto resources_create_exit;
     }
@@ -517,10 +519,10 @@ static int modify_qp_to_init(struct ibv_qp *qp) {
     flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT;
     /* For Unconnected Communication  */
     if (strcmp(config.qp_type, "ud") == 0) {
-        attr.qkey = Q_KEY; //Q_Keys from 0x80000000 - 8000FFFF are available for general use by applications
+        attr.qkey = (uint32_t) Q_KEY; //Q_Keys from 0x80000000 - 8000FFFF are available for general use by applications
         flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_QKEY;
     }
-    else{
+    if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0)) {
         attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE;
         flags = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
     }
@@ -536,7 +538,7 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
     int rc;
     memset(&attr, 0, sizeof(attr));
     attr.qp_state = IBV_QPS_RTR; 
-    attr.path_mtu = IBV_MTU_256; 
+    attr.path_mtu = IBV_MTU_512; 
     flags = IBV_QP_STATE | IBV_QP_PATH_MTU;
     if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0)) {
         attr.dest_qp_num = remote_qpn; 
@@ -546,8 +548,6 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
         attr.ah_attr.src_path_bits = 0; 
         attr.ah_attr.port_num = config.ib_port;
         attr.rq_psn = 0; 
-        attr.max_dest_rd_atomic = 1; 
-        attr.min_rnr_timer = 0x12;                  //Receiver Not Ready Timer 
         if (config.gid_idx >= 0) {
             attr.ah_attr.is_global = 1;
             attr.ah_attr.port_num = 1; 
@@ -558,7 +558,11 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
             attr.ah_attr.grh.traffic_class = 0;
         }
         flags = flags | IBV_QP_AV | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN;
-        if((strcmp(config.qp_type,"rc") == 0)) flags = flags |  (IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER);
+        if((strcmp(config.qp_type,"rc") == 0)) {
+            attr.max_dest_rd_atomic = 1; 
+            attr.min_rnr_timer = 0x12;                  //Receiver Not Ready Timer 
+            flags = flags |  (IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER);
+        }
     }
     if (strcmp(config.qp_type,"ud") == 0) {
         attr.qkey = Q_KEY;
@@ -589,7 +593,8 @@ static int modify_qp_to_rts (struct ibv_qp *qp) {
         attr.sq_psn = 0;
         attr.max_rd_atomic = 1;
         flags = flags | IBV_QP_SQ_PSN ;
-        if((strcmp(config.qp_type,"rc") == 0)) flags = flags | (IBV_QP_RETRY_CNT |  IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC | IBV_QP_TIMEOUT);
+        if((strcmp(config.qp_type,"rc") == 0)) 
+            flags = flags | (IBV_QP_RETRY_CNT |  IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC | IBV_QP_TIMEOUT);
     }
     // May Update Q-Key If The Program Fails Here.
 
@@ -702,8 +707,15 @@ static int connect_qp(struct resources *res) {
 
     if (strcmp(config.qp_type,"ud") == 0) {
 
-        // if (config.ib_p) TODO: Configure for GID.GLOBAL_INTERFACE_ID for DESTINATION IF IT DOESNOT WORK (See Line 110-121, ud_ping_pong.c)
         ah_attr.dlid = remote_con_data.lid;
+
+        if (config.gid_idx >= 0) {
+            ah_attr.is_global = 1;
+            ah_attr.grh.hop_limit = 1;
+            memcpy(&ah_attr.grh.dgid, remote_con_data.gid, 16);
+            ah_attr.grh.sgid_index = config.gid_idx;
+        }
+
         res->ah = ibv_create_ah(res->pd,&ah_attr);
         if(!res->ah) {
             fprintf(stderr,"Failed to Create Address Handle (AH)\n");
