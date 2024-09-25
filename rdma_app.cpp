@@ -792,7 +792,7 @@ int main(int argc, char *argv[]) {
             {.name = "NULL", .has_arg = 1, .val = '\0'},
         };
 
-        c = getopt_long(argc,argv,"p:d:i:g:",long_options, NULL);
+        c = getopt_long(argc,argv,"p:d:i:g:q:",long_options, NULL);
         if (c == -1) {
             // std::cout << "C = " << c << std::endl;
             break;
@@ -826,6 +826,7 @@ int main(int argc, char *argv[]) {
                     usage(argv[0]);
                     return 1;
                 }
+                break;
             default:
                 usage(argv[0]);
                 return 1;
