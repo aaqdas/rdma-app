@@ -661,20 +661,6 @@ static int connect_qp(struct resources *res) {
         uint8_t *p = remote_con_data.gid; fprintf(stdout, "Remote GID = %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x\n",p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]); 
         }
 
-    if (strcmp(config.qp_type,"ud") == 0) {
-
-        // if (config.ib_p) TODO: Configure for GID.GLOBAL_INTERFACE_ID for DESTINATION IF IT DOESNOT WORK (See Line 110-121, ud_ping_pong.c)
-        ah_attr.dlid = remote_con_data.lid;
-        res->ah = ibv_create_ah(res->pd,&ah_attr);
-        if(!res->ah) {
-            fprintf(stderr,"Failed to Create Address Handle (AH)\n");
-            rc = 1;
-        }
-        // if (rc) {
-        //     return rc;
-        // }
-    }
-
 
     /* modify the QP to init */
     rc = modify_qp_to_init(res->qp); 
@@ -707,6 +693,20 @@ static int connect_qp(struct resources *res) {
     {
         fprintf(stderr,"Sync Error After QPs are were moved to RTS\n");
         rc = 1;
+    }
+
+    if (strcmp(config.qp_type,"ud") == 0) {
+
+        // if (config.ib_p) TODO: Configure for GID.GLOBAL_INTERFACE_ID for DESTINATION IF IT DOESNOT WORK (See Line 110-121, ud_ping_pong.c)
+        ah_attr.dlid = remote_con_data.lid;
+        res->ah = ibv_create_ah(res->pd,&ah_attr);
+        if(!res->ah) {
+            fprintf(stderr,"Failed to Create Address Handle (AH)\n");
+            rc = 1;
+        }
+        // if (rc) {
+        //     return rc;
+        // }
     }
 
     connect_qp_exit:
