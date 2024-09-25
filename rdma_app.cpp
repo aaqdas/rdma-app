@@ -59,7 +59,7 @@ verbs RDMA_RC_example.c *
 #define MSG "SEND operation "
 #define RDMAMSGR "RDMA read operation " 
 #define RDMAMSGW "RDMA write operation" 
-#define MSG_SIZE (strlen(RDMAMSGW) + 1)
+#define MSG_SIZE (strlen(RDMAMSGW))
 #define Q_KEY 0x11111111
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
@@ -590,14 +590,12 @@ static int modify_qp_to_rts (struct ibv_qp *qp) {
     attr.qp_state = IBV_QPS_RTS;
     attr.sq_psn = 0;
     flags = IBV_QP_STATE | IBV_QP_SQ_PSN;
-    if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0)) {
+    if ((strcmp(config.qp_type,"rc") == 0) /*|| (strcmp(config.qp_type,"uc") == 0)*/) {
         attr.timeout = 0x12;
         attr.retry_cnt = 6;
         attr.rnr_retry = 0;
         attr.max_rd_atomic = 1;
-        flags = flags;
-        if((strcmp(config.qp_type,"rc") == 0)) 
-            flags = flags | (IBV_QP_RETRY_CNT |  IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC | IBV_QP_TIMEOUT);
+        flags = flags | (IBV_QP_RETRY_CNT |  IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC | IBV_QP_TIMEOUT);
     }
     // May Update Q-Key If The Program Fails Here.
 
@@ -695,7 +693,7 @@ static int connect_qp(struct resources *res) {
         fprintf(stderr, "failed to modify QP state to RTR\n");
         goto connect_qp_exit; 
     }
-
+    fprintf(stdout, "QP state was change to RTR\n");
     rc = modify_qp_to_rts(res->qp); 
     if (rc) {
         fprintf(stderr, "failed to modify QP state to RTS\n");
@@ -715,12 +713,15 @@ static int connect_qp(struct resources *res) {
         if (config.gid_idx >= 0) {
             ah_attr.is_global = 1;
             ah_attr.grh.hop_limit = 1;
+            ah_attr.port_num = 1;
             memcpy(&ah_attr.grh.dgid, remote_con_data.gid, 16);
+            ah_attr.grh.flow_label = 0; 
+            ah_attr.grh.traffic_class = 0;
             ah_attr.grh.sgid_index = config.gid_idx;
         }
 
         res->ah = ibv_create_ah(res->pd,&ah_attr);
-        if(!res->ah) {
+        if(res->ah == NULL) {
             fprintf(stderr,"Failed to Create Address Handle (AH)\n");
             rc = 1;
         }
@@ -747,6 +748,11 @@ static int resources_destroy (struct resources *res) {
     if (res->cq)
     if (ibv_destroy_cq(res->cq)) {
         fprintf(stderr, "failed to destroy CQ\n"); rc = 1;
+    }
+    if (res->ah) {
+        if(ibv_destroy_ah(res->ah)) {
+            fprintf(stderr, "failed to destroy AH\n"); rc = 1;        
+        }
     }
     if (res->pd)
     if (ibv_dealloc_pd(res->pd)) {
