@@ -267,11 +267,11 @@ static int post_send(struct resources *res, ibv_wr_opcode opcode) {
     sr.num_sge = 1;
     sr.opcode = opcode;
     sr.send_flags = IBV_SEND_SIGNALED;
-    // if (strcmp(config.qkey, "ud")) {
-    //     sr.ud.remote_qkey   = res->remote_props.qkey;
-    //     sr.ud.remote_qpn    = res->remote_props.qp_num;
-    //     sr.ud.ah            = res->ib_ctx->ah;          //TODO: Look into this if the application messes up.
-    // }
+    if (strcmp(config.qp_type, "ud") == 0) {
+        sr.wr.ud.ah            = res->ah;          //TODO: Look into this if the application messes up.
+        sr.wr.ud.remote_qpn    = res->remote_props.qp_num;
+        sr.wr.ud.remote_qkey   = res->remote_props.qkey;
+    }
 
     if(opcode != IBV_WR_SEND) {
         sr.wr.rdma.remote_addr = res->remote_props.addr;
