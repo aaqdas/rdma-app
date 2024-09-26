@@ -269,6 +269,8 @@ static int post_send(struct resources *res, ibv_wr_opcode opcode) {
     sr.opcode = opcode;
     sr.send_flags = IBV_SEND_SIGNALED;
     if (strcmp(config.qp_type, "ud") == 0) {
+        sr.opcode = IBV_WR_SEND_WITH_IMM;
+        sr.imm_data = res->qp->qp_num;
         sr.wr.ud.ah            = res->ah;          //TODO: Look into this if the application messes up.
         sr.wr.ud.remote_qpn    = res->remote_props.qp_num;
         sr.wr.ud.remote_qkey   = res->remote_props.qkey;
@@ -308,7 +310,7 @@ static int post_receive(struct resources *res) {
 
     memset(&sge, 0, sizeof(sge)); 
     sge.addr = (uintptr_t)res->buf;
-    sge.length = MSG_SIZE;
+    sge.length = MSG_SIZE + sizeof(struct ibv_grh);
     sge.lkey = res->mr->lkey;
     /* prepare the receive work request */
     memset(&rr, 0, sizeof(rr));
@@ -422,7 +424,7 @@ int resources_create(struct resources *res) {
     }
 
     /* allocate the memory buffer that will hold the data */
-    size = MSG_SIZE;
+    size = MSG_SIZE + sizeof(struct ibv_grh);
     res->buf = (char *) malloc(size);
     if (!res->buf ) {
         fprintf(stderr, "failed to malloc %Zu bytes to memory buffer\n", size); 
@@ -911,18 +913,20 @@ int main(int argc, char *argv[]) {
     }
 
     if (config.server_name) {
-        if (post_send(&res,IBV_WR_RDMA_READ)) {
-            fprintf(stderr,"Failed to Post SR 2\n");
+        if (strcmp(config.qp_type, "uc")) {
+            if (post_send(&res,IBV_WR_RDMA_READ)) {
+                fprintf(stderr,"Failed to Post SR 2\n");
+                rc = 1;
+                goto main_exit;
+            }
+            if (poll_completion_queue(&res)) {
+            fprintf(stderr, "Poll Completion Failed 2\n");
             rc = 1;
             goto main_exit;
+            }
+            fprintf(stdout, "Contents of server's buffer: '%s'\n", res.buf);
+            strcpy(res.buf, RDMAMSGW);
         }
-        if (poll_completion_queue(&res)) {
-        fprintf(stderr, "Poll Completion Failed 2\n");
-        rc = 1;
-        goto main_exit;
-        }
-        fprintf(stdout, "Contents of server's buffer: '%s'\n", res.buf);
-        strcpy(res.buf, RDMAMSGW);
         fprintf(stdout, "Now replacing it with: '%s'\n", res.buf);
 
         if (post_send(&res, IBV_WR_RDMA_WRITE)) {
