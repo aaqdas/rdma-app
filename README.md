@@ -1,4 +1,9 @@
 # RDMA Application
+## Prerequisites
+ ```bash 
+ $ sudo apt install libibverbs-dev rdma-core infiniband-diags
+ ```
+
 ## Capabilities 
  * Read
  * Write
