@@ -267,11 +267,11 @@ static int post_send(struct resources *res, ibv_wr_opcode opcode) {
     sr.sg_list = &sge;
     sr.num_sge = 1;
     sr.opcode = opcode;
-    sr.send_flags = IBV_SEND_SIGNALED;
+    // sr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
     if (strcmp(config.qp_type, "ud") == 0) {
-        sr.opcode = IBV_WR_SEND_WITH_IMM;
-        sr.imm_data = res->qp->qp_num;
-        sr.wr.ud.ah            = res->ah;          //TODO: Look into this if the application messes up.
+        // sr.opcode = IBV_WR_SEND_WITH_IMM;
+        // sr.imm_data = res->qp->qp_num;
+        sr.wr.ud.ah            = res->ah;
         sr.wr.ud.remote_qpn    = res->remote_props.qp_num;
         sr.wr.ud.remote_qkey   = res->remote_props.qkey;
     }
@@ -423,8 +423,8 @@ int resources_create(struct resources *res) {
         goto resources_create_exit;
     }
 
+    size = MSG_SIZE;
     /* allocate the memory buffer that will hold the data */
-    size = MSG_SIZE + sizeof(struct ibv_grh);
     res->buf = (char *) malloc(size);
     if (!res->buf ) {
         fprintf(stderr, "failed to malloc %Zu bytes to memory buffer\n", size); 
@@ -443,8 +443,8 @@ int resources_create(struct resources *res) {
         memset(res->buf, 0, size);
     /* register the memory buffer */
     mr_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE ;
-    if (strcmp(config.qp_type,"ud") == 0 )
-        mr_flags = IBV_ACCESS_LOCAL_WRITE;
+    // if (strcmp(config.qp_type,"ud") == 0 )
+    //     mr_flags = IBV_ACCESS_LOCAL_WRITE;
     res->mr = ibv_reg_mr(res->pd, res->buf, size, mr_flags); 
     if (!res->mr) {
         fprintf(stderr, "ibv_reg_mr failed with mr_flags=0x%x\n", mr_flags); rc = 1;
@@ -723,7 +723,7 @@ static int connect_qp(struct resources *res) {
         }
 
         res->ah = ibv_create_ah(res->pd,&ah_attr);
-        if(res->ah == NULL) {
+        if(!res->ah) {
             fprintf(stderr,"Failed to Create Address Handle (AH)\n");
             rc = 1;
         }
@@ -913,7 +913,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (config.server_name) {
-        if (strcmp(config.qp_type, "uc")) {
+        if ((strcmp(config.qp_type, "rc") == 0)) {
             if (post_send(&res,IBV_WR_RDMA_READ)) {
                 fprintf(stderr,"Failed to Post SR 2\n");
                 rc = 1;
@@ -925,19 +925,23 @@ int main(int argc, char *argv[]) {
             goto main_exit;
             }
             fprintf(stdout, "Contents of server's buffer: '%s'\n", res.buf);
+        }
             strcpy(res.buf, RDMAMSGW);
-        }
-        fprintf(stdout, "Now replacing it with: '%s'\n", res.buf);
+        
 
-        if (post_send(&res, IBV_WR_RDMA_WRITE)) {
-            fprintf(stderr, "failed to post SR 3\n"); rc = 1;
-            goto main_exit;
-        }
+        if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0) ) {
+            fprintf(stdout, "Now replacing it with: '%s'\n", res.buf);
 
-        if (poll_completion_queue(&res)) {
-            fprintf(stderr, "poll completion failed 3\n"); rc = 1;
-            goto main_exit;
-        } 
+            if (post_send(&res, IBV_WR_RDMA_WRITE)) {
+                fprintf(stderr, "failed to post SR 3\n"); rc = 1;
+                goto main_exit;
+            }
+
+            if (poll_completion_queue(&res)) {
+                fprintf(stderr, "poll completion failed 3\n"); rc = 1;
+                goto main_exit;
+            } 
+        }
     }
 
     if (sock_sync_data(res.sock, 1, "W", &temp_char)) /* just send a dummy char back and forth */ {
