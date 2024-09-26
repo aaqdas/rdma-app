@@ -258,7 +258,7 @@ static int post_send(struct resources *res, ibv_wr_opcode opcode) {
     int rc;
 
     memset(&sge,0,sizeof(sge));
-    sge.addr = (uintptr_t)res->buf; sge.length = MSG_SIZE; sge.lkey = res->mr->lkey;
+    sge.addr = (uintptr_t)res->buf +((!strcmp(config.qp_type, "ud")) ? 40: 0); sge.length = MSG_SIZE; sge.lkey = res->mr->lkey;
 
     /* prepare the send work request */ 
     memset(&sr, 0, sizeof(sr));
@@ -310,7 +310,7 @@ static int post_receive(struct resources *res) {
 
     memset(&sge, 0, sizeof(sge)); 
     sge.addr = (uintptr_t)res->buf;
-    sge.length = MSG_SIZE + sizeof(struct ibv_grh);
+    sge.length = MSG_SIZE +((!strcmp(config.qp_type, "ud")) ? 40: 0);
     sge.lkey = res->mr->lkey;
     /* prepare the receive work request */
     memset(&rr, 0, sizeof(rr));
@@ -423,7 +423,7 @@ int resources_create(struct resources *res) {
         goto resources_create_exit;
     }
 
-    size = MSG_SIZE;
+    size = MSG_SIZE +((!strcmp(config.qp_type, "ud")) ? 40: 0);
     /* allocate the memory buffer that will hold the data */
     res->buf = (char *) malloc(size);
     if (!res->buf ) {
@@ -436,7 +436,7 @@ int resources_create(struct resources *res) {
 
     /* only in the server side put the message in the memory buffer */ 
     if (!config.server_name) {
-        strcpy(res->buf, MSG);
+        strcpy(res->buf +((!strcmp(config.qp_type, "ud")) ? 40: 0), MSG);
         fprintf(stdout, "going to send the message: '%s'\n", res->buf); 
         }
     else 
@@ -707,7 +707,7 @@ static int connect_qp(struct resources *res) {
         fprintf(stderr,"Sync Error After QPs are were moved to RTS\n");
         rc = 1;
     }
-
+    res->ah = nullptr;
     if (strcmp(config.qp_type,"ud") == 0) {
 
         ah_attr.dlid = remote_con_data.lid;
@@ -899,7 +899,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (config.server_name) {
-        fprintf(stdout, "Message is: %s\n",res.buf);
+        fprintf(stdout, "Message is: %s\n",res.buf +((!strcmp(config.qp_type, "ud")) ? 40: 0));
     }
     else {
         strcpy(res.buf,RDMAMSGR);
