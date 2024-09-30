@@ -437,7 +437,7 @@ int resources_create(struct resources *res) {
     /* only in the server side put the message in the memory buffer */ 
     if (!config.server_name) {
         strcpy(res->buf +((!strcmp(config.qp_type, "ud")) ? 40: 0), MSG);
-        fprintf(stdout, "going to send the message: '%s'\n", res->buf); 
+        // fprintf(stdout, "going to send the message: '%s'\n", res->buf); 
         }
     else 
         memset(res->buf, 0, size);
@@ -885,64 +885,64 @@ int main(int argc, char *argv[]) {
         fprintf(stderr,"failed to connect QPs\n");
         goto main_exit;
     }
-    /*Post a Send Request*/
-    if (!config.server_name) {
-        if (post_send(&res,IBV_WR_SEND)) {
-            fprintf(stderr, "failed to post sr\n");
-            goto main_exit;
-        }
-    }
+    // /*Post a Send Request*/
+    // if (!config.server_name) {
+    //     if (post_send(&res,IBV_WR_SEND)) {
+    //         fprintf(stderr, "failed to post sr\n");
+    //         goto main_exit;
+    //     }
+    // }
 
-    if (poll_completion_queue(&res)) {
-        fprintf(stderr, "Poll Completion Failed\n");
-        goto main_exit;
-    }
+    // if (poll_completion_queue(&res)) {
+    //     fprintf(stderr, "Poll Completion Failed\n");
+    //     goto main_exit;
+    // }
 
-    if (config.server_name) {
-        fprintf(stdout, "Message is: %s\n",res.buf +((!strcmp(config.qp_type, "ud")) ? 40: 0));
-    }
-    else {
-        strcpy(res.buf,RDMAMSGR);
-    }
+    // if (config.server_name) {
+    //     fprintf(stdout, "Message is: %s\n",res.buf +((!strcmp(config.qp_type, "ud")) ? 40: 0));
+    // }
+    // else {
+    //     strcpy(res.buf,RDMAMSGR);
+    // }
 
-    if (sock_sync_data(res.sock,1,"R",&temp_char))
-    {
-        fprintf(stderr,"Sync Error before RDMA OPs\n");
-        rc = 1;
-        goto main_exit;
-    }
+    // if (sock_sync_data(res.sock,1,"R",&temp_char))
+    // {
+    //     fprintf(stderr,"Sync Error before RDMA OPs\n");
+    //     rc = 1;
+    //     goto main_exit;
+    // }
 
-    if (config.server_name) {
-        if ((strcmp(config.qp_type, "rc") == 0)) {
-            if (post_send(&res,IBV_WR_RDMA_READ)) {
-                fprintf(stderr,"Failed to Post SR 2\n");
-                rc = 1;
-                goto main_exit;
-            }
-            if (poll_completion_queue(&res)) {
-            fprintf(stderr, "Poll Completion Failed 2\n");
-            rc = 1;
-            goto main_exit;
-            }
-            fprintf(stdout, "Contents of server's buffer: '%s'\n", res.buf);
-        }
-            strcpy(res.buf, RDMAMSGW);
+    // if (config.server_name) {
+    //     if ((strcmp(config.qp_type, "rc") == 0)) {
+    //         if (post_send(&res,IBV_WR_RDMA_READ)) {
+    //             fprintf(stderr,"Failed to Post SR 2\n");
+    //             rc = 1;
+    //             goto main_exit;
+    //         }
+    //         if (poll_completion_queue(&res)) {
+    //         fprintf(stderr, "Poll Completion Failed 2\n");
+    //         rc = 1;
+    //         goto main_exit;
+    //         }
+    //         fprintf(stdout, "Contents of server's buffer: '%s'\n", res.buf);
+    //     }
+    //         strcpy(res.buf, RDMAMSGW);
         
 
-        if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0) ) {
-            fprintf(stdout, "Now replacing it with: '%s'\n", res.buf);
+    //     if ((strcmp(config.qp_type,"rc") == 0) || (strcmp(config.qp_type,"uc") == 0) ) {
+    //         fprintf(stdout, "Now replacing it with: '%s'\n", res.buf);
 
-            if (post_send(&res, IBV_WR_RDMA_WRITE)) {
-                fprintf(stderr, "failed to post SR 3\n"); rc = 1;
-                goto main_exit;
-            }
+    //         if (post_send(&res, IBV_WR_RDMA_WRITE)) {
+    //             fprintf(stderr, "failed to post SR 3\n"); rc = 1;
+    //             goto main_exit;
+    //         }
 
-            if (poll_completion_queue(&res)) {
-                fprintf(stderr, "poll completion failed 3\n"); rc = 1;
-                goto main_exit;
-            } 
-        }
-    }
+    //         if (poll_completion_queue(&res)) {
+    //             fprintf(stderr, "poll completion failed 3\n"); rc = 1;
+    //             goto main_exit;
+    //         } 
+    //     }
+    // }
 
     if (sock_sync_data(res.sock, 1, "W", &temp_char)) /* just send a dummy char back and forth */ {
         fprintf(stderr, "sync error after RDMA ops\n"); rc = 1;
