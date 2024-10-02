@@ -59,7 +59,8 @@ verbs RDMA_RC_example.c *
 #define MSG "SEND operation "
 #define RDMAMSGR "RDMA read operation " 
 #define RDMAMSGW "RDMA write operation" 
-#define MSG_SIZE (strlen(RDMAMSGW))
+// #define MSG_SIZE (strlen(RDMAMSGW))
+#define MSG_SIZE 0x200000
 #define Q_KEY 0x11111111
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
@@ -90,13 +91,21 @@ char *qp_type;
 };
 
 struct cm_con_data_t {
-    uint64_t addr;
-    uint32_t rkey;
+    uint32_t ip_addr;
     uint32_t qp_num;
-    uint16_t lid;
+    uint32_t psn;
+    uint32_t rkey;
+
+    uint64_t addr;
+    uint32_t size;
+    
+
+    // uint16_t lid;
+
     uint8_t gid[16];
-    uint32_t qkey;
-} __attribute__((packed));
+    uint8_t _compat_buff[17] = {0};
+    // uint32_t qkey;
+};
 
 struct resources {
     struct ibv_device_attr device_attr;
@@ -189,19 +198,12 @@ static int sock_connect(const char *servername, int port) {
 }
 
 
-int sock_sync_data (int sock, int xfer_size, char *local_data, char *remote_data) {
+int sock_sync_data (int sock, int xfer_size, char *local_data, char *remote_data, int ro = 0/*Read-Only*/) {
     int rc;
     int read_bytes = 0;
     int total_read_bytes = 0;
 
-    rc = write(sock,local_data,xfer_size);
-    if (rc < xfer_size) {
-        perror("Failed Writing Data During sock_sync_data\n");
-    }
-    else {
-        rc = 0;
-    }
-
+    rc = 0;
     while(!rc && total_read_bytes < xfer_size) {
         read_bytes = read(sock,remote_data,xfer_size);
         if (read_bytes > 0) {
@@ -211,6 +213,17 @@ int sock_sync_data (int sock, int xfer_size, char *local_data, char *remote_data
             rc = read_bytes;
         }
     }
+
+    // if (!ro) {
+        rc = write(sock,local_data,xfer_size);
+        if (rc < xfer_size) {
+            perror("Failed Writing Data During sock_sync_data\n");
+        }
+        else {
+            rc = 0;
+        }
+    //}
+
     return rc;
 }
 
@@ -273,7 +286,7 @@ static int post_send(struct resources *res, ibv_wr_opcode opcode) {
         // sr.imm_data = res->qp->qp_num;
         sr.wr.ud.ah            = res->ah;
         sr.wr.ud.remote_qpn    = res->remote_props.qp_num;
-        sr.wr.ud.remote_qkey   = res->remote_props.qkey;
+        // sr.wr.ud.remote_qkey   = res->remote_props.qkey;
     }
 
     if(opcode != IBV_WR_SEND) {
@@ -636,38 +649,55 @@ static int connect_qp(struct resources *res) {
     else
         memset(&my_gid, 0, sizeof my_gid);
 
-    local_con_data.addr = htonll((uintptr_t)res->buf);
-    local_con_data.rkey = htonl(res->mr->rkey); 
-    local_con_data.qp_num = htonl(res->qp->qp_num); 
-    local_con_data.lid = htons(res->port_attr.lid); 
+    // local_con_data.ip_addr = htonl(0x64646401);
+    // local_con_data.addr = htonll((uintptr_t)res->buf);
+    // local_con_data.rkey = htonl(res->mr->rkey); 
+    // local_con_data.qp_num = htonl(res->qp->qp_num); 
+    // local_con_data.size = htonl(MSG_SIZE);
+    // local_con_data.psn = htonl(0);
+    local_con_data.ip_addr = 0x64646401;
+    local_con_data.addr = ((uintptr_t)res->buf);
+    local_con_data.rkey = (res->mr->rkey); 
+    local_con_data.qp_num = (res->qp->qp_num); 
+    local_con_data.size =(MSG_SIZE);
+    local_con_data.psn = (0);
+    // local_con_data.lid = htons(res->port_attr.lid); 
     
-    if (strcmp(config.qp_type,"ud") == 0) local_con_data.qkey  = htonl(Q_KEY);
+    // if (strcmp(config.qp_type,"ud") == 0) local_con_data.qkey  = htonl(Q_KEY);
 
     memcpy(local_con_data.gid, &my_gid, 16);
-    fprintf(stdout, "\nLocal LID = 0x%x\n", res->port_attr.lid);
+    // fprintf(stdout, "\nLocal LID = 0x%x\n", res->port_attr.lid);
     if (sock_sync_data(res->sock, sizeof(struct cm_con_data_t), (char *) &local_con_data, (char *) &tmp_con_data) < 0) {
         fprintf(stderr, "failed to exchange connection data between sides\n"); 
         rc = 1;
         goto connect_qp_exit;
     }
 
-    remote_con_data.addr = ntohll(tmp_con_data.addr);
+    remote_con_data.addr = ntohl(tmp_con_data.addr);
     remote_con_data.rkey = ntohl(tmp_con_data.rkey); 
     remote_con_data.qp_num = ntohl(tmp_con_data.qp_num);
-    remote_con_data.lid = ntohs(tmp_con_data.lid); 
+    remote_con_data.psn = ntohl(tmp_con_data.psn);
+    remote_con_data.ip_addr = ntohl(tmp_con_data.ip_addr);
+    remote_con_data.size = ntohl(tmp_con_data.size);
+    // remote_con_data.lid = ntohs(tmp_con_data.lid); 
 
-    if (strcmp(config.qp_type,"ud") == 0) remote_con_data.qkey = ntohl(tmp_con_data.qkey);
+    // if (strcmp(config.qp_type,"ud") == 0) remote_con_data.qkey = ntohl(tmp_con_data.qkey);
 
     memcpy(remote_con_data.gid, tmp_con_data.gid, 16);
 
     /* save the remote side attributes, we will need it for the post SR */ 
-    res->remote_props = remote_con_data;
-    fprintf(stdout, "Remote address = 0x%"PRIx64"\n", remote_con_data.addr); 
-    fprintf(stdout, "Remote rkey = 0x%x\n", remote_con_data.rkey);
-    fprintf(stdout, "Remote QP number = 0x%x\n", remote_con_data.qp_num); 
-    fprintf(stdout, "Remote LID = 0x%x\n", remote_con_data.lid);
+    res->remote_props = tmp_con_data;
+    fprintf(stdout, "Remote Buffer Address = 0x%"PRIx64"\n", tmp_con_data.addr); 
+    fprintf(stdout, "Remote Buffer Size = 0x%x\n", tmp_con_data.size); 
+    fprintf(stdout, "Remote rkey = 0x%x\n", tmp_con_data.rkey);
+    fprintf(stdout, "Remote QP number = 0x%x\n", tmp_con_data.qp_num); 
+    fprintf(stdout, "Remote IP Address= 0x%x\n", tmp_con_data.ip_addr);
+    fprintf(stdout, "Remote PSN number = 0x%x\n", tmp_con_data.psn);  
     
-    if (strcmp(config.qp_type,"ud") == 0) fprintf(stdout, "Remote Q-Key = 0x%x\n", remote_con_data.qkey);
+    
+    // fprintf(stdout, "Remote LID = 0x%x\n", remote_con_data.lid);
+    
+    // if (strcmp(config.qp_type,"ud") == 0) fprintf(stdout, "Remote Q-Key = 0x%x\n", remote_con_data.qkey);
 
 
     if (config.gid_idx >= 0) {
@@ -683,54 +713,54 @@ static int connect_qp(struct resources *res) {
     }
 
     /* let the client post RR to be prepared for incoming messages */ 
-    if (config.server_name) {
-    rc = post_receive(res); 
-    if (rc) { 
-        fprintf(stderr, "failed to post RR\n");
-        goto connect_qp_exit; }
-    }
+    // if (config.server_name) {
+    // rc = post_receive(res); 
+    // if (rc) { 
+    //     fprintf(stderr, "failed to post RR\n");
+    //     goto connect_qp_exit; }
+    // }
 
-    rc = modify_qp_to_rtr(res->qp, remote_con_data.qp_num, remote_con_data.lid, remote_con_data.gid); 
-    if (rc) {
-        fprintf(stderr, "failed to modify QP state to RTR\n");
-        goto connect_qp_exit; 
-    }
-    fprintf(stdout, "QP state was change to RTR\n");
-    rc = modify_qp_to_rts(res->qp); 
-    if (rc) {
-        fprintf(stderr, "failed to modify QP state to RTS\n");
-        goto connect_qp_exit; 
-    }
-    fprintf(stdout, "QP state was change to RTS\n");
-    if (sock_sync_data(res->sock, 1, "Q", &temp_char)) /* just send a dummy char back and forth */
-    {
-        fprintf(stderr,"Sync Error After QPs are were moved to RTS\n");
-        rc = 1;
-    }
-    res->ah = nullptr;
-    if (strcmp(config.qp_type,"ud") == 0) {
+    // rc = modify_qp_to_rtr(res->qp, remote_con_data.qp_num, /*remote_con_data.lid*/0, remote_con_data.gid); 
+    // if (rc) {
+    //     fprintf(stderr, "failed to modify QP state to RTR\n");
+    //     goto connect_qp_exit; 
+    // }
+    // fprintf(stdout, "QP state was change to RTR\n");
+    // rc = modify_qp_to_rts(res->qp); 
+    // if (rc) {
+    //     fprintf(stderr, "failed to modify QP state to RTS\n");
+    //     goto connect_qp_exit; 
+    // }
+    // fprintf(stdout, "QP state was change to RTS\n");
+    // if (sock_sync_data(res->sock, 1, "Q", &temp_char)) /* just send a dummy char back and forth */
+    // {
+    //     fprintf(stderr,"Sync Error After QPs are were moved to RTS\n");
+    //     rc = 1;
+    // }
+    // res->ah = nullptr;
+    // if (strcmp(config.qp_type,"ud") == 0) {
 
-        ah_attr.dlid = remote_con_data.lid;
+    //     // ah_attr.dlid = remote_con_data.lid;
 
-        if (config.gid_idx >= 0) {
-            ah_attr.is_global = 1;
-            ah_attr.grh.hop_limit = 1;
-            ah_attr.port_num = 1;
-            memcpy(&ah_attr.grh.dgid, remote_con_data.gid, 16);
-            ah_attr.grh.flow_label = 0; 
-            ah_attr.grh.traffic_class = 0;
-            ah_attr.grh.sgid_index = config.gid_idx;
-        }
+    //     if (config.gid_idx >= 0) {
+    //         ah_attr.is_global = 1;
+    //         ah_attr.grh.hop_limit = 1;
+    //         ah_attr.port_num = 1;
+    //         memcpy(&ah_attr.grh.dgid, remote_con_data.gid, 16);
+    //         ah_attr.grh.flow_label = 0; 
+    //         ah_attr.grh.traffic_class = 0;
+    //         ah_attr.grh.sgid_index = config.gid_idx;
+    //     }
 
-        res->ah = ibv_create_ah(res->pd,&ah_attr);
-        if(!res->ah) {
-            fprintf(stderr,"Failed to Create Address Handle (AH)\n");
-            rc = 1;
-        }
+    //     res->ah = ibv_create_ah(res->pd,&ah_attr);
+    //     if(!res->ah) {
+    //         fprintf(stderr,"Failed to Create Address Handle (AH)\n");
+    //         rc = 1;
+    //     }
         // if (rc) {
         //     return rc;
         // }
-    }
+    // }
 
     connect_qp_exit:
     return rc;
@@ -807,6 +837,9 @@ int main(int argc, char *argv[]) {
     struct resources res;
     int rc = 1;
     char temp_char;
+
+    // char* sync_char = (char*)malloc(sizeof(char)*4);
+    // memcpy(&sync_char,0,sizeof(sync_char));
 
     while(1) {
         int c;
@@ -944,16 +977,31 @@ int main(int argc, char *argv[]) {
     //     }
     // }
 
-    if (sock_sync_data(res.sock, 1, "W", &temp_char)) /* just send a dummy char back and forth */ {
-        fprintf(stderr, "sync error after RDMA ops\n"); rc = 1;
-        goto main_exit;
+    // if (sock_sync_data(res.sock, 1, "W", &temp_char)) /* just send a dummy char back and forth */ {
+    //     fprintf(stderr, "sync error after RDMA ops\n"); rc = 1;
+    //     goto main_exit;
+    // }
+
+        // while(1) {
+
+        // }
+
+
+    if (sock_sync_data(res.sock, 4, "WWWW", &temp_char)) /* just send a dummy char back and forth */ {
+         fprintf(stderr, "sync error after RDMA ops\n"); rc = 1;
+         goto main_exit;
     }
 
+    while(!getchar()) {
+
+    }
+    close(res.sock);
     if(!config.server_name) {
         fprintf(stdout, "Contents of server buffer: '%s'\n", res.buf);
     }
         rc = 0;  
     main_exit:
+    
         if(resources_destroy(&res)) {
             fprintf(stderr,"Failed to Destroy Resources\n");
             rc = 1;
